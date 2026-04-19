@@ -39,24 +39,73 @@ public class EsqueletoGestionDonacionesSangre {
 	
 	public static void realizar_donacion(String m_NIF, int m_ID_Hospital,
 			float m_Cantidad,  Date m_Fecha_Donacion) throws SQLException {
+		PreparedStatement stInsert = null;
+		PreparedStatement stUpdate = null;
+		String sentenciaInsert;
+		String sentenciaUpdate;
 		
 		PoolDeConexiones pool = PoolDeConexiones.getInstance();
 		Connection con=null;
-
 	
 		try{
 			con = pool.getConnection();
-			//Completar por el alumno
+			if(!existeHospital(con,m_ID_Hospital)) {
+				con.rollback();
+				throw new GestionDonacionesSangreException(3);
+			}
+			if(!existeDonante(con, m_NIF)) {
+				con.rollback();
+				throw new GestionDonacionesSangreException(1);
+			}
+			if(!comprobarCupo(con,m_NIF, m_Fecha_Donacion)) {
+				con.rollback();
+				throw new GestionDonacionesSangreException(4);
+			}
+			if(m_Cantidad < 0) {
+				con.rollback();
+				throw new GestionDonacionesSangreException(5);
+			}
+			if(m_Cantidad > 0.45) {
+				con.rollback();
+				throw new GestionDonacionesSangreException(5);
+			}
+			
+			sentenciaInsert = "Insert into donacion values (seq_donacion.nextVal,?,?,?)";
+			stInsert = con.prepareStatement(sentenciaInsert);
+			stInsert.setString(1, m_NIF);
+			stInsert.setFloat(2, m_Cantidad);
+			stInsert.setDate(3, m_Fecha_Donacion);
+			stInsert.executeUpdate();
+
+			
+			sentenciaUpdate = "Update reserva_hospital Set cantidad = cantidad + ? Where ID_Hospital = ?";
+			stUpdate = con.prepareStatement(sentenciaUpdate);
+			stUpdate.setFloat(1, m_Cantidad);
+			stUpdate.setInt(2, m_ID_Hospital);
+			stUpdate.executeUpdate();
+
+			con.commit();
 			
 		} catch (SQLException e) {
 			//Completar por el alumno			
+			if (con != null) {
+				con.rollback();
+			}
 			
 			logger.error(e.getMessage());
 			throw e;		
 
 		} finally {
-			/*A rellenar por el alumno*/
-		}
+			if (stInsert != null) {
+				stInsert.close();
+			}
+			if (stUpdate != null) {
+				stUpdate.close();
+			}
+			if (con != null) {
+				con.close();
+			}
+		}	
 		
 		
 	}
@@ -186,7 +235,39 @@ public class EsqueletoGestionDonacionesSangre {
 	    st.close();
 	    return existe;
 	}
+	private static boolean existeDonante(Connection con, String nif) throws SQLException {
+	    PreparedStatement st = con.prepareStatement(
+	        "SELECT 1 FROM donante WHERE NIF = ?");
+	    st.setString(1, nif);
+	    ResultSet rs = st.executeQuery();
+	    boolean existe = rs.next();
+	    rs.close();
+	    st.close();
+	    return existe;
+	}
+	private static boolean comprobarCupo(Connection con, String nifDonante, Date fecha) throws SQLException {
+	    PreparedStatement st = con.prepareStatement(
+	        "SELECT MAX(trunc(fecha_donacion)) AS ultima_fecha FROM donacion WHERE nif_donante = ?");
+	    st.setString(1, nifDonante);
+	    ResultSet rs = st.executeQuery();
+	    Date ultimaFecha = null;
+	    if (rs.next()) {
+	        ultimaFecha = rs.getDate("ultima_fecha");
+	    }
+	    rs.close();
+	    st.close();
+	    // Si nunca ha donado → puedes decidir devolver true
+	    if (ultimaFecha == null) return true;
 
+	    long diferenciaMilisegundos = fecha.getTime() - ultimaFecha.getTime();
+	    long dias = diferenciaMilisegundos / (1000 * 60 * 60 * 24);
+	    boolean resultado = false;
+	    if(dias >= 15) {
+	    	resultado = true;
+	    }
+	    
+	    return resultado;
+	}
 	
 
 	
@@ -233,6 +314,7 @@ public class EsqueletoGestionDonacionesSangre {
 			cll_reinicia = conn.prepareCall("{call inicializa_test}");
 			cll_reinicia.execute();
 			correr_tests_anular_traspaso();
+			correr_tests_realizar_donacion();
 			
 		} catch (SQLException e) {				
 			logger.error(e.getMessage());			
@@ -242,6 +324,14 @@ public class EsqueletoGestionDonacionesSangre {
 		
 		}			
 		
+	}
+	static void correr_tests_realizar_donacion() {
+	    test_realizar_donacion_ok();
+	    test_realizar_donacion_hospital_no_existe();
+	    test_realizar_donacion_donante_no_existe();
+	    test_realizar_donacion_cupo_invalido();
+	    test_realizar_donacion_cantidad_negativa();
+	    test_realizar_donacion_cantidad_excesiva();
 	}
 	static void test_anular_traspaso_ok() {
 
@@ -321,4 +411,124 @@ public class EsqueletoGestionDonacionesSangre {
 		test_anular_traspaso_tipo_sangre_no_existe();
 		test_anular_traspaso_hospital_no_existe();
 	}
+	static void test_realizar_donacion_ok() {
+
+	    try {
+	        reiniciar();
+
+	        realizar_donacion("12345678A", 1, 0.30f, java.sql.Date.valueOf("2025-02-10"));
+
+	        System.out.println("OK test_realizar_donacion_ok");
+
+	    } catch (Exception e) {
+	        logger.error("FALLO test_realizar_donacion_ok: " + e.getMessage());
+	    }
+	}
+	static void test_realizar_donacion_hospital_no_existe() {
+
+	    try {
+	        reiniciar();
+
+	        realizar_donacion("12345678A", 999, 0.30f, java.sql.Date.valueOf("2025-02-10"));
+
+	        logger.error("FALLO test_realizar_donacion_hospital_no_existe: no lanzó excepción");
+
+	    } catch (GestionDonacionesSangreException e) {
+
+	        if (e.getErrorCode() == 3) {
+	            System.out.println("OK test_realizar_donacion_hospital_no_existe");
+	        } else {
+	            logger.error("FALLO código incorrecto: " + e.getErrorCode());
+	        }
+
+	    } catch (Exception e) {
+	        logger.error("FALLO excepción inesperada: " + e.getMessage());
+	    }
+	}
+	static void test_realizar_donacion_donante_no_existe() {
+
+	    try {
+	        reiniciar();
+
+	        realizar_donacion("00000000Z", 1, 0.30f, java.sql.Date.valueOf("2025-02-10"));
+
+	        logger.error("FALLO test_realizar_donacion_donante_no_existe: no lanzó excepción");
+
+	    } catch (GestionDonacionesSangreException e) {
+
+	        if (e.getErrorCode() == 1) {
+	            System.out.println("OK test_realizar_donacion_donante_no_existe");
+	        } else {
+	            logger.error("FALLO código incorrecto: " + e.getErrorCode());
+	        }
+
+	    } catch (Exception e) {
+	        logger.error("FALLO excepción inesperada: " + e.getMessage());
+	    }
+	}
+	static void test_realizar_donacion_cupo_invalido() {
+
+	    try {
+	        reiniciar();
+
+	        // Última donación: 15/01/2025 → aquí ponemos 20/01/2025 (<15 días)
+	        realizar_donacion("12345678A", 1, 0.30f, java.sql.Date.valueOf("2025-01-20"));
+
+	        logger.error("FALLO test_realizar_donacion_cupo_invalido: no lanzó excepción");
+
+	    } catch (GestionDonacionesSangreException e) {
+
+	        if (e.getErrorCode() == 4) {
+	            System.out.println("OK test_realizar_donacion_cupo_invalido");
+	        } else {
+	            logger.error("FALLO código incorrecto: " + e.getErrorCode());
+	        }
+
+	    } catch (Exception e) {
+	        logger.error("FALLO excepción inesperada: " + e.getMessage());
+	    }
+	}
+	static void test_realizar_donacion_cantidad_negativa() {
+
+	    try {
+	        reiniciar();
+
+	        realizar_donacion("12345678A", 1, -0.10f, java.sql.Date.valueOf("2025-02-10"));
+
+	        logger.error("FALLO test_realizar_donacion_cantidad_negativa: no lanzó excepción");
+
+	    } catch (GestionDonacionesSangreException e) {
+
+	        if (e.getErrorCode() == 5) {
+	            System.out.println("OK test_realizar_donacion_cantidad_negativa");
+	        } else {
+	            logger.error("FALLO código incorrecto: " + e.getErrorCode());
+	        }
+
+	    } catch (Exception e) {
+	        logger.error("FALLO excepción inesperada: " + e.getMessage());
+	    }
+	}
+	static void test_realizar_donacion_cantidad_excesiva() {
+
+	    try {
+	        reiniciar();
+
+	        realizar_donacion("12345678A", 1, 0.50f, java.sql.Date.valueOf("2025-02-10"));
+
+	        logger.error("FALLO test_realizar_donacion_cantidad_excesiva: no lanzó excepción");
+
+	    } catch (GestionDonacionesSangreException e) {
+
+	        if (e.getErrorCode() == 5) {
+	            System.out.println("OK test_realizar_donacion_cantidad_excesiva");
+	        } else {
+	            logger.error("FALLO código incorrecto: " + e.getErrorCode());
+	        }
+
+	    } catch (Exception e) {
+	        logger.error("FALLO excepción inesperada: " + e.getMessage());
+	    }
+	}
+	
 }
