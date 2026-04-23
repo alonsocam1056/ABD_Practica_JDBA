@@ -86,8 +86,7 @@ public class EsqueletoGestionDonacionesSangre {
 
 			con.commit();
 			
-		} catch (SQLException e) {
-			//Completar por el alumno			
+		} catch (SQLException e) {		
 			if (con != null) {
 				con.rollback();
 			}
@@ -175,24 +174,19 @@ public class EsqueletoGestionDonacionesSangre {
 				if (!existeTipoSangre(con, m_ID_Tipo_Sangre)) {
 					throw new GestionDonacionesSangreException(2);
 				}
-				if (!existeTipoSangre(con, m_ID_Hospital_Origen) || !existeTipoSangre(con, m_ID_Hospital_Destino)) {
+				if (!existeHospital(con, m_ID_Hospital_Origen) || !existeHospital(con, m_ID_Hospital_Destino)) {
 					throw new GestionDonacionesSangreException(3);
 				}
 				
 			}
 			
 			
-			//Completar por el alumno
 			
-		} catch (SQLException e) {
-			//Completar por el alumno			
+		} catch (SQLException e) {			
 			
 			if (con != null) {
 				con.rollback();
 			}
-			//if (e.getErrorCode() >= 1 && e.getErrorCode() <= 7) {
-				//throw new GestionDonacionesSangreException(e.getErrorCode());
-			//}
 			logger.error(e.getMessage());
 			throw e;	
 
@@ -212,7 +206,6 @@ public class EsqueletoGestionDonacionesSangre {
 			if (con != null) {
 				con.close();
 			}
-			/*A rellenar por el alumno*/
 		}		
 	}
 	private static boolean existeTipoSangre(Connection con, int id) throws SQLException {
@@ -256,7 +249,7 @@ public class EsqueletoGestionDonacionesSangre {
 	    }
 	    rs.close();
 	    st.close();
-	    // Si nunca ha donado → puedes decidir devolver true
+	    // Si nunca ha donado devuelve true
 	    if (ultimaFecha == null) return true;
 
 	    long diferenciaMilisegundos = fecha.getTime() - ultimaFecha.getTime();
@@ -349,7 +342,22 @@ public class EsqueletoGestionDonacionesSangre {
 		
 		PoolDeConexiones pool = PoolDeConexiones.getInstance();		
 		
-		//Relatar caso por caso utilizando el siguiente procedure para inicializar los datos
+		/*
+		TESTS ANULAR TRASPASO:
+		1- Test con datos válidos que debería devolver OK
+		2- Test con tipo de sangre inexistente que debería lanzar la excepción con código 2
+		3- Test con hospital inexistente que debería lanzar la excepción con código 2
+		TESTS REALIZAR DONACIÓN:
+		1- Test con datos válidos que debería devolver OK
+		2- Test con hospital inexistente que debería lanzar la excepción con código 2
+		3- Test con donante inexistente que debería lanzar la excepción con código 1
+		4- Test con donaciones realizadas en un plazo inferior a 15 días que debería lanzar la excepción con código 4
+		5- Test con un volumen de sangre inferior a 0 litros que debería lanzar la excepción con código 5
+		6- Test con un volumen de sangre superior a 0,45 litros que debería lanzar la excepción con código 5
+		TESTS CONSULTA TRASPASOS:
+		1- Test con datos válidos que debería devolver OK
+		2- Test que fuerza una consulta sin tuplas que debería lanzar la excepción con código 2 (se usa un tipo de sangre no válido)
+		*/
 		
 		CallableStatement cll_reinicia=null;
 		Connection conn = null;
