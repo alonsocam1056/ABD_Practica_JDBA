@@ -277,20 +277,66 @@ public class EsqueletoGestionDonacionesSangre {
 				
 		PoolDeConexiones pool = PoolDeConexiones.getInstance();
 		Connection con=null;
+		PreparedStatement stSelect = null;
+		ResultSet rs = null;
 
 	
 		try{
 			con = pool.getConnection();
-			//Completar por el alumno
+			String sentenciaSelect = 	
+				"SELECT t.id_traspaso, t.fecha_traspaso, t.cantidad AS cantidad_traspaso, " +
+				"ho.nombre AS hospital_origen, rho.cantidad AS reserva_origen, " +
+				"hd.nombre AS hospital_destino, rhd.cantidad AS reserva_destino " + 
+				"FROM traspaso t " +
+				"JOIN tipo_sangre ts ON t.id_tipo_sangre= ts.id_tipo_sangre " +
+				"JOIN hospital ho ON t.id_hospital_origen = ho.id_hospital " +
+				"JOIN hospital hd ON t.id_hospital_destino = hd.id_hospital " +
+				"JOIN reserva_hospital rho ON rho.id_hospital = t.id_hospital_origen AND rho.id_tipo_sangre = t.id_tipo_sangre " +
+				"JOIN reserva_hospital rhd ON rhd.id_hospital = t.id_hospital_destino AND rhd.id_tipo_sangre = t.id_tipo_sangre " +
+				"WHERE ts.descripcion = ? " +
+				"ORDER BY t.id_hospital_destino ASC, t.fecha_traspaso ASC";
+			
+			stSelect = con.prepareStatement(sentenciaSelect);
+			stSelect.setString(1, m_Tipo_Sangre);
+			
+			rs = stSelect.executeQuery();
+						
+			boolean existenDatos = rs.next();
+			
+			if (!existenDatos) {
+				throw new GestionDonacionesSangreException(2);
+			}
+			
+			System.out.println("--- Traspasos Registrados: " + m_Tipo_Sangre + " ---");
+
+			while (rs.next()) {
+				existenDatos = true;
+				System.out.println("---------------------------------------------------");
+				System.out.println("ID Traspaso: " + rs.getInt("id_traspaso") +
+												   " | Fecha: " + rs.getDate("fecha_traspaso") +
+												   " | Cantidad: " + rs.getFloat("cantidad_traspaso") + "L)");
+				System.out.println("  -> Origen:  " + rs.getString("hospital_origen") +
+												   " (Reserva actual: " + rs.getFloat("reserva_origen") + "L)");
+				System.out.println("  -> Destino: " + rs.getString("hospital_destino") + 
+												   " (Reserva actual: " + rs.getFloat("reserva_destino") + "L)");
+				
+			}
+			
+			System.out.println("---------------------------------------------------");
 			
 		} catch (SQLException e) {
-			//Completar por el alumno			
+			
+			if (con != null) {
+				con.rollback();
+			}
 			
 			logger.error(e.getMessage());
 			throw e;		
 
 		} finally {
-			/*A rellenar por el alumno*/
+			if (rs != null) rs.close();
+			if (stSelect != null) stSelect.close();
+			if (con != null) con.close();
 		}		
 	}
 	
@@ -315,6 +361,7 @@ public class EsqueletoGestionDonacionesSangre {
 			cll_reinicia.execute();
 			correr_tests_anular_traspaso();
 			correr_tests_realizar_donacion();
+			correr_tests_consulta_traspasos();
 			
 		} catch (SQLException e) {				
 			logger.error(e.getMessage());			
@@ -529,6 +576,68 @@ public class EsqueletoGestionDonacionesSangre {
 	    } catch (Exception e) {
 	        logger.error("FALLO excepción inesperada: " + e.getMessage());
 	    }
+	}
+	
+	static void correr_tests_consulta_traspasos() {
+		test_consulta_traspasos_ok();
+		test_consulta_traspasos_sin_datos();
+	}
+	
+	static void test_consulta_traspasos_ok() {
+		PoolDeConexiones pool = PoolDeConexiones.getInstance();
+		Connection con = null;
+		PreparedStatement st = null;
+		ResultSet rs = null;
+		
+		try {
+			reiniciar();
+			con = pool.getConnection();
+			
+			String tipoSangreABuscar = "Tipo A.";
+			String sql = "SELECT 1 FROM tipo_sangre WHERE descripcion = ?";
+			
+			st = con.prepareStatement(sql);
+			st.setString(1, tipoSangreABuscar);
+			rs = st.executeQuery();
+			
+			if (rs.next()) {
+				System.out.println("OK test_consulta_traspasos_ok");
+			} else {
+				logger.error("FALLO test_consulta_traspasos_ok: El tipo de sangre '" + tipoSangreABuscar + "' no existe.");
+			}
+			
+		} catch (Exception e) {
+			logger.error("FALLO test_consulta_traspasos_ok: " + e.getMessage());
+		} finally {
+			try {
+				if (rs != null) rs.close();
+				if (st != null) st.close();
+				if (con != null) con.close();
+			} catch (SQLException ex) {
+				logger.error(ex.getMessage());
+			}
+			 
+			
+		}
+	}
+
+	static void test_consulta_traspasos_sin_datos() {
+		try {
+			reiniciar();			
+			
+			consulta_traspasos("TIPO INVENTADO");
+			
+			logger.error("FALLO test_consulta_traspasos_sin_datos: no lanzó excepción");
+			
+		} catch (GestionDonacionesSangreException e) {
+			if (e.getErrorCode() == 2) {
+				System.out.println("OK test_consulta_traspasos_sin_datos");
+			} else {
+				logger.error("FALLO código incorrecto: " + e.getErrorCode());
+			}
+		} catch (Exception e) {
+			logger.error("FALLO excepción inesperada: " + e.getMessage());
+		}
 	}
 	
 }
